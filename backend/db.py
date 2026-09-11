@@ -34,11 +34,11 @@ def init_db():
     session_count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
     if session_count == 0:
         seed_titles = [
-            "Platform Marketplace 101",
-            "Give me a proposal for a company name",
-            "Can you write a short paragraph for",
-            "Research about UI UX",
-            "Plan a trip to see the northern lights",
+            "\uD50C\uB7AB\uD3FC \uB9C8\uCF13\uD50C\uB808\uC774\uC2A4 101",
+            "\uD68C\uC0AC \uC774\uB984 \uC81C\uC548",
+            "\uC9E7\uC740 \uBB38\uB2E8 \uC791\uC131 \uC694\uCCAD",
+            "UI UX \uB9AC\uC11C\uCE58",
+            "\uC624\uB85C\uB77C \uC5EC\uD589 \uACC4\uD68D",
         ]
         conn.executemany(
             "INSERT INTO sessions (title) VALUES (?)",
