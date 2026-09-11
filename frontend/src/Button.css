@@ -1,0 +1,15 @@
+.btn{
+    background-color: purple;
+    width: fit-content;
+    color: #999;
+    font-size: 2rem;
+    padding: 2%;
+    border-radius: 20%;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.5s;
+
+}
+.btn.on{
+    background-color: blue;
+}

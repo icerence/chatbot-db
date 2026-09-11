@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Logs and editor files
+*.log
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Test and coverage output
+.coverage
+htmlcov/
+.pytest_cache/
+
+# SQLite & Portable Tools
+*.db
+*.sqlite
+*.sqlite3
+SQLiteDatabaseBrowserPortable/
+
+# Temporary logs & result text files
+*_result.txt
+server_run_info.txt
+
