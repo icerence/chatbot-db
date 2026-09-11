@@ -29,6 +29,21 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         )
     """)
+    # Provide useful conversation history on a fresh install. Existing user data is
+    # never changed because these rows are inserted only when no sessions exist.
+    session_count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    if session_count == 0:
+        seed_titles = [
+            "Platform Marketplace 101",
+            "Give me a proposal for a company name",
+            "Can you write a short paragraph for",
+            "Research about UI UX",
+            "Plan a trip to see the northern lights",
+        ]
+        conn.executemany(
+            "INSERT INTO sessions (title) VALUES (?)",
+            [(title,) for title in seed_titles],
+        )
     conn.commit()
     conn.close()
 
