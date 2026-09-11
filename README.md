@@ -30,7 +30,7 @@ FastAPI 백엔드와 React 19 + Vite 프론트엔드로 구성되어 있으며, 
 ### 3. 데이터베이스 현황 (`chat.db`)
 - **DB 엔진**: SQLite3 (`PRAGMA foreign_keys = ON`, `ON DELETE CASCADE`)
 - **누적 세션 수**: 3개
-- **누적 메시지 수**: 8개
+- **누적 메시지 수**: 12개
 
 ---
 
