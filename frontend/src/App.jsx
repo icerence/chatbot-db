@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 
 //const API = "http://localhost:8000/chat";
 //const API = "https://two026-chatbot-backend.onrender.com";
-const API = "http://localhost:8000";
+const API = "https://chatbot-db-back-6b3p.onrender.com";
 
 export default function App() {
   const [sessions, setSession] = useState([]);
