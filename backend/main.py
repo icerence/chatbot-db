@@ -1,12 +1,49 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import requests, os
+import requests, os, threading, time
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import db
 
 load_dotenv()  # .env의 키를 추출하는 함수
-app = FastAPI()
+
+def start_self_ping():
+    """Render 무료 인스턴스의 15분 슬립(Spin-down)을 방지하기 위한 백그라운드 셀프 핑 스레드"""
+    target_url = (
+        os.getenv("RENDER_EXTERNAL_URL")
+        or os.getenv("SELF_PING_URL")
+        or os.getenv("BACKEND_URL")
+    )
+    if not target_url:
+        print("[Self-Ping] RENDER_EXTERNAL_URL 또는 SELF_PING_URL이 설정되지 않아 셀프 핑이 비활성화되었습니다. (Render 배포 시 자동 활성화)")
+        return
+
+    base_url = target_url.rstrip("/")
+    ping_url = f"{base_url}/health"
+    print(f"[Self-Ping] Render 슬립 방지 태스크 시작: {ping_url} (10분 간격)")
+
+    def ping_worker():
+        time.sleep(60)  # 서버 구동 후 1분 대기 후 첫 핑 시작
+        while True:
+            try:
+                res = requests.get(ping_url, timeout=30)
+                print(f"[Self-Ping] 핑 성공: {ping_url} (HTTP {res.status_code})")
+            except Exception as err:
+                print(f"[Self-Ping] 핑 실패: {err}")
+            time.sleep(600)  # 10분(600초)마다 주기적 호출
+
+    t = threading.Thread(target=ping_worker, daemon=True)
+    t.start()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_self_ping()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 db.init_db()
 print(app)
 app.add_middleware(
@@ -81,6 +118,17 @@ def build_history(session_id):
         }
         for r in row
     ]
+
+
+@app.get("/health")
+def health_check():
+    """Render 및 프론트엔드 헬스체크 / 슬립 방지용 엔드포인트"""
+    return {"status": "ok", "message": "server is awake"}
+
+
+@app.get("/ping")
+def ping():
+    return {"pong": True}
 
 
 @app.post("/chat")

@@ -35,5 +35,6 @@ SQLiteDatabaseBrowserPortable/
 
 # Temporary logs & result text files
 *_result.txt
+*_status.txt
 server_run_info.txt
 

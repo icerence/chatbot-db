@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 
-//const API = "http://localhost:8000/chat";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 //const API = "https://two026-chatbot-backend.onrender.com";
-const API = "https://chatbot-db-back-6b3p.onrender.com";
+// const API = "https://chatbot-db-back-6b3p.onrender.com";
 
 export default function App() {
   const [sessions, setSession] = useState([]);
@@ -14,13 +14,74 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const requestJson = async (url, options) => {
-    const res = await fetch(url, options);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.detail || data.message || `Request failed: ${res.status}`);
+  // Render 서버 슬립(Cold-start) 방어 상태
+  const [serverStatus, setServerStatus] = useState("checking"); // checking | waking | ready | error
+  const [statusNotice, setStatusNotice] = useState("");
+
+  // API 요청 및 슬립/네트워크 오류 자동 재시도 함수
+  const requestJson = async (url, options = {}, retries = 2, delay = 2000) => {
+    try {
+      const controller = new AbortController();
+      // Render 콜드스타트는 최대 50초 이상 걸릴 수 있으므로 60초 타임아웃 부여
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      // Render 서버가 깨어나는 도중 반환하는 502/503/504 에러 대응 재시도
+      if ([502, 503, 504].includes(res.status) && retries > 0) {
+        console.warn(`[슬립 방어] 서버 응답 대기 중 (${res.status}). ${delay / 1000}초 후 재시도합니다...`);
+        await new Promise((r) => setTimeout(r, delay));
+        return requestJson(url, options, retries - 1, delay * 1.5);
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || `Request failed: ${res.status}`);
+      }
+      return data;
+    } catch (error) {
+      if (retries > 0 && error.name !== "AbortError") {
+        console.warn(`[슬립 방어] 네트워크 재시도 (${retries}회 남음)...`, error);
+        await new Promise((r) => setTimeout(r, delay));
+        return requestJson(url, options, retries - 1, delay * 1.5);
+      }
+      throw error;
     }
-    return data;
+  };
+
+  // Render 무료 인스턴스 슬립 상태 감지 및 깨우기(Wake-up) 폴링
+  const checkAndWakeServer = async () => {
+    setServerStatus("checking");
+    setStatusNotice("서버 상태를 확인하는 중입니다...");
+
+    const maxAttempts = 20; // 3초 간격으로 최대 60초간 확인
+    for (let i = 1; i <= maxAttempts; i++) {
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(`${API}/health`, { signal: controller.signal });
+        clearTimeout(tid);
+
+        if (res.ok) {
+          setServerStatus("ready");
+          setStatusNotice("✅ 서버가 준비되었습니다.");
+          setTimeout(() => setStatusNotice(""), 3000);
+          return true;
+        }
+      } catch {
+        // 서버 슬립으로 인한 일시적 대기
+      }
+
+      setServerStatus("waking");
+      setStatusNotice(
+        `☁️ Render 서버를 깨우는 중입니다 (${i * 3}초 경과)... 무료 서버 특성상 약 30~50초 소요될 수 있습니다.`
+      );
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+
+    setServerStatus("error");
+    setStatusNotice("⚠️ 서버 연결에 실패했습니다. 백엔드 상태를 확인해 주세요.");
+    return false;
   };
 
   // func
@@ -70,17 +131,38 @@ export default function App() {
     }
   };
 
-  // 리액트 컴포넌트 상태에 따라 함수실행을 제어
+  // 1. 초기 로드 시 서버 상태 확인 및 깨우기
   useEffect(() => {
-    // The initial data load intentionally updates state after the request completes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadSessions().then((list) => {
-      if (list.length > 0) {
-        console.log(list[0].id);
-        setSessionId(list[0].id);
-        loadMsg(list[0].id);
+    let isMounted = true;
+    (async () => {
+      const isAwake = await checkAndWakeServer();
+      if (!isMounted) return;
+      if (isAwake) {
+        const list = await loadSessions();
+        if (isMounted && list.length > 0) {
+          setSessionId(list[0].id);
+          loadMsg(list[0].id);
+        }
       }
-    });
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 2. 브라우저가 열려있는 동안 10분마다 Keep-Alive Ping (Render 15분 슬립 방지)
+  useEffect(() => {
+    const pingInterval = setInterval(async () => {
+      try {
+        await fetch(`${API}/health`);
+        console.log("💓 [Keep-alive Ping 전송 성공]");
+      } catch (err) {
+        console.warn("⚠️ [Keep-alive Ping 실패]:", err);
+      }
+    }, 10 * 60 * 1000);
+
+    return () => clearInterval(pingInterval);
   }, []);
   // 수정할 세션의 아이디, 타이틀로 선택
   const startRename = (s) => {
@@ -139,52 +221,83 @@ export default function App() {
     if (e.key === "Enter") send();
   };
 
-  return (
-    <div className="app">
-      <aside className="side">
-        <button className="new" onClick={newSession}>
-          + 새 대화
-        </button>
-        <ul className="session-list">
-          {sessions.map((s) => (
-            <li key={s.id} className={s.id === sessionId ? "session on" : "session"}>
-              {console.log('edit',editId)}
-              {console.log('session',s.id)}
-              {editId === s.id ? (
-                <span className="rename">
-                  <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-                  <button onClick={() => saveTitle(s.id)}>저장</button>
-                </span>
-              ) : (
-                <>
-                  <button className="session-title" onClick={() => openSession(s.id)}>
-                    {s.title}
-                  </button>
-                  <span className="session-tools">
-                    <button onClick={() => startRename(s)}>이름</button>
-                    <button onClick={() => removeSession(s.id)}>삭제</button>
-                  </span>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      </aside>
+  const isServerWaking = serverStatus === "checking" || serverStatus === "waking";
 
-      <main className="chat">
-        <div className="box">
-          {msgs.map((m) => (
-            <div key={m.id} className={m.role}>
-              <p>{m.text}</p>
-            </div>
-          ))}
-          {loading && <p className="loading">생각 중...</p>}
+  return (
+    <div className="app-container">
+      {statusNotice && (
+        <div className={`server-banner ${serverStatus}`}>
+          <span>{statusNotice}</span>
+          {serverStatus === "error" && (
+            <button
+              className="retry-btn"
+              onClick={() => {
+                checkAndWakeServer().then((ok) => {
+                  if (ok) loadSessions();
+                });
+              }}
+            >
+              재연결 시도
+            </button>
+          )}
         </div>
-        <div className="input-row">
-          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onKey} placeholder="메시지를 입력하세요" />
-          <button onClick={send}>전송</button>
-        </div>
-      </main>
+      )}
+      <div className="app">
+        <aside className="side">
+          <button className="new" onClick={newSession} disabled={isServerWaking}>
+            + 새 대화
+          </button>
+          <ul className="session-list">
+            {sessions.map((s) => (
+              <li key={s.id} className={s.id === sessionId ? "session on" : "session"}>
+                {console.log('edit',editId)}
+                {console.log('session',s.id)}
+                {editId === s.id ? (
+                  <span className="rename">
+                    <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+                    <button onClick={() => saveTitle(s.id)}>저장</button>
+                  </span>
+                ) : (
+                  <>
+                    <button className="session-title" onClick={() => openSession(s.id)}>
+                      {s.title}
+                    </button>
+                    <span className="session-tools">
+                      <button onClick={() => startRename(s)}>이름</button>
+                      <button onClick={() => removeSession(s.id)}>삭제</button>
+                    </span>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </aside>
+
+        <main className="chat">
+          <div className="box">
+            {msgs.map((m) => (
+              <div key={m.id} className={m.role}>
+                <p>{m.text}</p>
+              </div>
+            ))}
+            {loading && <p className="loading">생각 중...</p>}
+          </div>
+          <div className="input-row">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKey}
+              placeholder={
+                isServerWaking
+                  ? "서버를 깨우는 중입니다. 잠시만 기다려 주세요..."
+                  : "메시지를 입력하세요"
+              }
+              disabled={isServerWaking || loading}
+            />
+            <button onClick={send} disabled={isServerWaking || loading}>전송</button>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
